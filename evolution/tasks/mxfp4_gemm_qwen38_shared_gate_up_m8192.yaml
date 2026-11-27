@@ -1,0 +1,32 @@
+name: mxfp4_gemm_qwen38_shared_gate_up_m8192
+workload_dir: candidates/mxfp4_gemm_qwen38_shared_gate_up_m8192
+platform: rocm
+kernel_authoring: TIRx-amdgcn
+sota_baseline:
+  name: aiter_gemm_a4w4
+bench_timeout_s: 600
+spec: |
+  Implement the MXFP4 GEMM of the Qwen3.8-Flash-Next shared expert's fused
+  gate_up projection at prefill on AMD Instinct MI355X (gfx950, CDNA4) and beat
+  aiter's tuned gemm_a4w4. Workload: qwen38-shared-gate-up-m8192 only:
+  M=8192 tokens, N=1280 (gate + up), K=2560 (hidden size).
+
+  Format (OCP MX): A [M, K/2] and B [N, K/2] are uint8 tensors holding two FP4
+  e2m1 values per byte, the even K element in the low nibble. SA [M, K/32] and
+  SB [N, K/32] are uint8 E8M0 scales, value 2^(byte - 127), one per 32
+  consecutive K elements of a row. Compute
+  D[M,N] = dequant(A, SA) @ dequant(B, SB)^T with fp32-equivalent accumulation
+  and bf16 output.
+
+  Version contract: solution.py exports setup(data, M, N, K) -> callable.
+  data contains A, SA, B, SB and preallocated D. B and SB are weights: setup may
+  repack them into any layout. A and SA are activations: every timed invocation
+  must read them as given and overwrite D. setup may compile, allocate scratch
+  and execute one warmup call. Do not call aiter, hipBLASLt, rocBLAS, torch.matmul,
+  PyTorch tensor operators, Composable Kernel, Triton, HIP C++, or an existing
+  solution kernel for production computation.
+
+  Correctness requires torch-isclose rtol=0.01, atol=1.0 against a float32
+  dequantize-and-multiply reference for at least 99.99% of elements. Speedup is
+  aiter gemm_a4w4 GPU time / candidate GPU time; each timed call is preceded by
+  a write over a 512 MB buffer, so caches are cold.

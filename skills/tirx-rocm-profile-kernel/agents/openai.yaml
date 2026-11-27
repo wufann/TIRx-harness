@@ -1,0 +1,4 @@
+interface:
+  display_name: "TIRx ROCm Profile Kernel"
+  short_description: "Measure and explain gfx950 TIRx kernel performance"
+  default_prompt: "Use $tirx-rocm-profile-kernel to measure this gfx950 TIRx kernel, inspect its hot-loop ISA, and collect counters or ATT timelines as needed."

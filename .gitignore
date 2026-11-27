@@ -33,3 +33,4 @@ tools/src/tirx_harness/numsim/_tvm_rust_ext.identity
 # ROCm profiling workloads built by tools/rocm/analysis/build.sh
 tools/rocm/analysis/rocblas_gemm
 tools/rocm/analysis/hsaco_gemm
+/skills/tirx-rocm-wiki/references/manuals/

@@ -17,7 +17,16 @@ import yaml
 # <workload_dir> vN` dispatches to the registered flashinfer-bench-evolve task.
 BENCH_ADAPTER = "evolution/benchmark/adapter.py"
 
-KERNEL_AUTHORING_MODES: frozenset[str] = frozenset({"TIRx-lite", "task"})
+KERNEL_AUTHORING_MODES: frozenset[str] = frozenset({"TIRx-lite", "TIRx-amdgcn", "task"})
+
+# GPU platform of a task -> the toolset that installs its skills and shared bans.
+PLATFORM_TOOLSETS: dict[str, str] = {"cuda": "kda_flow", "rocm": "rocm_flow"}
+# TIRx-lite targets CUDA only; ROCm kernels are TVMScript with the T.amdgcn dialect.
+_AUTHORING_PLATFORMS: dict[str, frozenset[str]] = {
+    "TIRx-lite": frozenset({"cuda"}),
+    "TIRx-amdgcn": frozenset({"rocm"}),
+    "task": frozenset(PLATFORM_TOOLSETS),
+}
 
 
 @dataclass
@@ -45,6 +54,7 @@ class Task:
     spec: str
     banned_paths: list[str] = field(default_factory=list)
     bench_timeout_s: int | None = None
+    platform: str = "cuda"
 
 
 def merge_unique(*lists: list[str]) -> list[str]:
@@ -119,6 +129,16 @@ def load_task(path: Path) -> Task:
             f"{sorted(KERNEL_AUTHORING_MODES)}, got {kernel_authoring!r}"
         )
 
+    platform = data.get("platform", "cuda")
+    if platform not in PLATFORM_TOOLSETS:
+        raise ValueError(
+            f"{path}: platform must be one of {sorted(PLATFORM_TOOLSETS)}, got {platform!r}"
+        )
+    if platform not in _AUTHORING_PLATFORMS[kernel_authoring]:
+        raise ValueError(
+            f"{path}: kernel_authoring {kernel_authoring!r} does not target {platform}"
+        )
+
     baseline = data.get("sota_baseline")
     if not isinstance(baseline, dict):
         raise ValueError(f"{path}: 'sota_baseline' must be a mapping")
@@ -141,6 +161,7 @@ def load_task(path: Path) -> Task:
         spec=spec,
         banned_paths=_string_list(data, "banned_paths", path),
         bench_timeout_s=bench_timeout_s,
+        platform=platform,
     )
 
 

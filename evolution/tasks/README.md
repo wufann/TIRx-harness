@@ -1,5 +1,14 @@
 # Workload declarations
 
+Tasks with `platform: rocm` run on AMD Instinct MI355X (gfx950) with
+`kernel_authoring: TIRx-amdgcn` (TVMScript with the `T.amdgcn` dialect) and the
+`rocm_flow` toolset: `fp16_gemm_floor_mi355x` (hipBLASLt baseline) and
+`mxfp4_gemm_qwen38_shared_gate_up_m8192` (aiter `gemm_a4w4` baseline). Prepare them
+inside the ROCm dev container with `python -m evolution.cli init --task <name>` from a
+checkout whose sibling `TIRx-kernels` checkout provides `tirx_kernels/rocm`; the run
+venv reuses the container's torch / aiter and tvm-tirx build instead of the CUDA uv
+groups. Remote (kcoral) scoring is not available for ROCm tasks yet.
+
 `grouped_gemm_fp8` uses the existing Grouped GEMM
 preparation and DeepGEMM baseline from `tirx-kernels` on B200.
 All four configurations must pass; report per-workload and geometric-mean speedup.

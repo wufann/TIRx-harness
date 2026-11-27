@@ -7,10 +7,15 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 
 from .guards import CANONICAL_KERNELS_SOURCE_DIR, _sanitize_banned_paths
+
+# .pth files of the launcher environment that must not reach a ROCm run venv: they
+# would put an unsanitized tirx_kernels source tree on sys.path.
+_ROCM_SKIPPED_PTH_PREFIX = "tirx_kernels"
 
 
 @dataclass(frozen=True)
@@ -21,11 +26,15 @@ class Environment:
     kernels: Path
 
     @classmethod
-    def create(cls, worktree: Path) -> Environment:
+    def create(
+        cls, worktree: Path, *, platform: str = "cuda", kernels_source: Path | None = None
+    ) -> Environment:
         """Create a fresh venv and install the worktree's runtime packages."""
         prefix = worktree / ".venv"
         if prefix.exists():
             raise ValueError(f"Run venv already exists: {prefix}")
+        if platform == "rocm":
+            return cls._create_rocm(prefix, kernels_source)
         python = prefix / "bin/python"
         # `uv run` exports the launcher's venv; the run venv is selected explicitly.
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
@@ -72,6 +81,48 @@ class Environment:
                 raise ValueError(f"{name} was not installed into the run venv.")
             packages[name] = Path(origin).resolve().parent
         return cls(prefix, python, site, packages["tirx_kernels"])
+
+    @classmethod
+    def _create_rocm(cls, prefix: Path, kernels_source: Path | None) -> Environment:
+        """A venv layered on the launcher's ROCm environment.
+
+        The locked uv groups carry CUDA wheels, so a ROCm run reuses what the launcher
+        already runs on: the container image's torch / aiter and the locally built
+        tvm-tirx. The launcher's .pth files are replicated (editable tvm-tirx, the
+        image site-packages chain) and its site-packages directory is appended as a
+        plain path, ahead of the image chain, so its tvm-ffi shadows the image's. The
+        kernel package is copied from ``kernels_source`` into the venv, where task bans
+        can remove files; a .pth pointing at that source tree is never replicated.
+        tirx_harness (CUDA analysis tools) is not installed.
+        """
+        if kernels_source is None or not (kernels_source / "tirx_kernels").is_dir():
+            raise ValueError(f"ROCm runs need a TIRx-kernels checkout, got {kernels_source}")
+        subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(prefix)], check=True)
+        python = prefix / "bin/python"
+        site = Path(
+            subprocess.run(
+                [str(python), "-I", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        ).resolve()
+        launcher_site = Path(sysconfig.get_path("purelib")).resolve()
+        for entry in sorted(launcher_site.iterdir()):
+            if entry.name.startswith(_ROCM_SKIPPED_PTH_PREFIX):
+                continue
+            if entry.suffix == ".pth" or (
+                entry.name.startswith("_editable") and entry.suffix == ".py"
+            ):
+                shutil.copy2(entry, site / entry.name)
+        # Sorts before the image chain (zz_*.pth): plain path, its own .pth files unread.
+        (site / "zy_launcher_site.pth").write_text(f"{launcher_site}\n")
+        shutil.copytree(
+            kernels_source / "tirx_kernels",
+            site / "tirx_kernels",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        return cls(prefix, python, site, site / "tirx_kernels")
 
     def kernel_bans(self, banned_paths: list[str]) -> list[str]:
         """Translate checkout-relative task restrictions to installed paths."""

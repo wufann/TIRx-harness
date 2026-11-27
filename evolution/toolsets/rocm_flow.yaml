@@ -1,0 +1,9 @@
+name: rocm_flow
+# ROCm (gfx950) runs: the T.amdgcn authoring, debugging and profiling stack. This
+# file is the authority for the installed skill set of tasks with `platform: rocm`.
+skills:
+  - tirx-rocm-wiki
+  - tirx-rocm-debug-kernel
+  - tirx-rocm-profile-kernel
+banned_paths:
+  - tools/tests/**

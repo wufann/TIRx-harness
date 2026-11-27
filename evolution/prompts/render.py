@@ -29,6 +29,8 @@ def render(name: str, /, **slots: str) -> str:
 def kernel_authoring_contract(task: Task) -> str:
     if task.kernel_authoring == "TIRx-lite":
         return render("rule_tirx_lite_authoring").rstrip("\n")
+    if task.kernel_authoring == "TIRx-amdgcn":
+        return render("rule_tirx_amdgcn_authoring").rstrip("\n")
     if task.kernel_authoring == "task":
         return (
             "The selected task specification is the sole authority for the "
@@ -49,6 +51,16 @@ micro-optimizations only.
 
 Study the canonical kernels and their notes in `tirx-wiki` for optimization
 ideas and tactics that transfer to this workload."""
+    if task.kernel_authoring == "TIRx-amdgcn":
+        return """\
+One deliberate source of invention: survey the CDNA4 ISA reference in
+`tirx-rocm-wiki` broadly, not only the instructions the current candidate
+already uses. An instruction, operand form or scheduling control you had not
+considered may suggest a different kernel structure or a cheaper local step.
+
+Study the gfx950 kernels under `tirx_kernels/rocm/` and the vocabulary notes in
+`tirx-rocm-wiki` (aiter, hipBLASLt and HipKittens patterns, and what the LLVM
+AMDGPU backend does with them) for tactics that transfer to this workload."""
     if task.kernel_authoring == "task":
         return """\
 Use `KernelWiki` and the selected implementation stack's authoritative
@@ -72,6 +84,18 @@ def kernel_research_debugging_contract(task: Task) -> str:
   applicable TIRx correctness tools and the normal benchmark correctness check.
 - If a performance change affects synchronization or shared state, use both
   operational skills. Reading guides or suggesting commands is not evidence."""
+    if task.kernel_authoring == "TIRx-amdgcn":
+        return """\
+- Proactively use `tirx-rocm-wiki` to research the T.amdgcn dialect, TVMScript
+  constructs, gfx950 instruction semantics, MFMA operand layouts and the LLVM
+  AMDGPU backend behaviour recorded there.
+- For each major optimization direction, invoke `tirx-rocm-profile-kernel`: read
+  the generated ISA of the hot loop, measure, use hardware counters when needed,
+  preserve artifacts, and rerun after the change.
+- Invoke `tirx-rocm-debug-kernel` for failures, hangs, suspect results, or changes
+  affecting waitcnt / barrier placement, LDS sharing or numerical behavior, then
+  run the normal benchmark correctness check.
+- Reading guides or suggesting commands is not evidence; run the tools."""
     if task.kernel_authoring == "task":
         return """\
 - Proactively use `KernelWiki` to research the selected implementation stack,
@@ -105,7 +129,7 @@ def kernel_remote_local_checks(task: Task) -> str:
     raise ValueError(f"unsupported kernel authoring mode: {task.kernel_authoring!r}")
 
 
-def shared_rule_blocks(toolset: Toolset) -> dict[str, str]:
+def shared_rule_blocks(toolset: Toolset, platform: str = "cuda") -> dict[str, str]:
     """Render the banned-read and GPU rules for KDA."""
     if toolset.banned_paths:
         banned = "\n".join(f"   - {path}" for path in toolset.banned_paths)
@@ -114,5 +138,7 @@ def shared_rule_blocks(toolset: Toolset) -> dict[str, str]:
 
     return {
         "banned_reads": render("rule_banned_reads", banned_paths_block=banned).rstrip("\n"),
-        "gpu": (_PROMPTS_DIR / "rule_gpu.md").read_text().rstrip("\n"),
+        "gpu": (_PROMPTS_DIR / ("rule_gpu_rocm.md" if platform == "rocm" else "rule_gpu.md"))
+        .read_text()
+        .rstrip("\n"),
     }

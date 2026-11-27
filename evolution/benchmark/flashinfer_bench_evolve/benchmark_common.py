@@ -94,25 +94,31 @@ def choose_device(device_setting: str) -> torch.device:
         torch.cuda.set_device(device)
         return device
 
-    rows = (
-        subprocess.check_output(
-            [
-                "nvidia-smi",
-                "--query-gpu=index,memory.used,utilization.gpu",
-                "--format=csv,noheader,nounits",
-            ],
-            text=True,
-        )
-        .strip()
-        .splitlines()
-    )
+    if torch.version.hip:
+        rows = _rocm_gpu_usage()
+        unit = "%"
+        visible = os.environ.get("HIP_VISIBLE_DEVICES") or os.environ.get("ROCR_VISIBLE_DEVICES")
+    else:
+        rows = [
+            [part.strip() for part in row.split(",")]
+            for row in subprocess.check_output(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=index,memory.used,utilization.gpu",
+                    "--format=csv,noheader,nounits",
+                ],
+                text=True,
+            )
+            .strip()
+            .splitlines()
+        ]
+        unit = " MiB"
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES")
     candidates = []
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
     visible_ids = None
     if visible:
         visible_ids = [int(x) for x in visible.split(",") if x.strip().isdigit()]
-    for row in rows:
-        idx_s, mem_s, util_s = [part.strip() for part in row.split(",")]
+    for idx_s, mem_s, util_s in rows:
         if visible_ids is not None and int(idx_s) not in visible_ids:
             continue
         candidates.append((int(mem_s), int(util_s), int(idx_s)))
@@ -120,8 +126,25 @@ def choose_device(device_setting: str) -> torch.device:
     local_idx = visible_ids.index(idx) if visible_ids is not None else idx
     device = torch.device(f"cuda:{local_idx}")
     torch.cuda.set_device(device)
-    print(f"selected GPU cuda:{idx} (memory_used={mem} MiB, util={util}%)")
+    print(f"selected GPU cuda:{idx} (memory_used={mem}{unit}, util={util}%)")
     return device
+
+
+def _rocm_gpu_usage() -> list[tuple[str, str, str]]:
+    """(physical index, VRAM used %, GPU use %) per AMD GPU, from rocm-smi."""
+
+    data = json.loads(
+        subprocess.check_output(["rocm-smi", "--showmemuse", "--showuse", "--json"], text=True)
+    )
+    return [
+        (
+            card.removeprefix("card"),
+            fields["GPU Memory Allocated (VRAM%)"],
+            fields["GPU use (%)"],
+        )
+        for card, fields in data.items()
+        if card.startswith("card")
+    ]
 
 
 def load_workloads(
@@ -264,7 +287,41 @@ def clone_args(args):
     return tuple(clone_arg(arg) for arg in args)
 
 
+# Larger than the last-level cache it must evict: MI355X has 4 MB L2 per XCD (32 MB
+# total) behind a 256 MB Infinity Cache.
+_ROCM_FLUSH_BYTES = 512 * 1024 * 1024
+
+
+def _time_fn_rocm(fn, args, device, warmup: int, iters: int):
+    """Median per-call GPU time with a cold cache hierarchy, from HIP events.
+
+    CUPTI does not exist on ROCm. Each timed call is preceded by a write over a
+    buffer larger than the Infinity Cache, the counterpart of the CUPTI timer's
+    ``cold_l2_cache``; only the interval between the call's own events is kept.
+    """
+
+    with torch.cuda.device(device):
+        flush = torch.empty(_ROCM_FLUSH_BYTES // 4, dtype=torch.int32, device=device)
+        for _ in range(warmup):
+            fn(*args)
+        torch.cuda.synchronize(device)
+        events = [
+            (torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True))
+            for _ in range(iters)
+        ]
+        for start, end in events:
+            flush.zero_()
+            start.record()
+            fn(*args)
+            end.record()
+        torch.cuda.synchronize(device)
+        del flush
+        return statistics.median(start.elapsed_time(end) for start, end in events)
+
+
 def time_fn(fn, args, device, warmup: int, iters: int):
+    if torch.version.hip:
+        return _time_fn_rocm(fn, args, device, warmup, iters), "hip_event_cold"
     try:
         from flashinfer.testing import bench_gpu_time_with_cupti
 

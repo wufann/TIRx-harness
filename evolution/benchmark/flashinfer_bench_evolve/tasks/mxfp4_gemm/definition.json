@@ -1,0 +1,31 @@
+{
+  "name": "mxfp4_gemm",
+  "description": "OCP MXFP4 GEMM (e2m1 values, one E8M0 scale per 32 K elements) with bf16 output, Qwen3.8-Flash-Next shared-expert gate_up shapes.",
+  "op_type": "gemm",
+  "tags": [
+    "dtype:mxfp4",
+    "status:synthetic",
+    "baseline:aiter_gemm_a4w4",
+    "platform:rocm"
+  ],
+  "axes": {
+    "M": {"type": "var"},
+    "N": {"type": "const", "value": 1280},
+    "K": {"type": "const", "value": 2560}
+  },
+  "constraints": [
+    "A.shape == [M, K // 2] and B.shape == [N, K // 2]",
+    "SA.shape == [M, K // 32] and SB.shape == [N, K // 32]",
+    "A.dtype == B.dtype == SA.dtype == SB.dtype == torch.uint8"
+  ],
+  "inputs": {
+    "A": {"shape": ["M", "K // 2"], "dtype": "uint8"},
+    "SA": {"shape": ["M", "K // 32"], "dtype": "uint8"},
+    "B": {"shape": ["N", "K // 2"], "dtype": "uint8"},
+    "SB": {"shape": ["N", "K // 32"], "dtype": "uint8"}
+  },
+  "outputs": {
+    "D": {"shape": ["M", "N"], "dtype": "bfloat16"}
+  },
+  "reference": "from flashinfer_bench_evolve.tasks.mxfp4_gemm.baseline import reference\n"
+}

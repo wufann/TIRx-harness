@@ -22,6 +22,7 @@ import yaml
 from evolution.preparation import sandbox
 from evolution.preparation.declare import (
     BENCH_ADAPTER,
+    PLATFORM_TOOLSETS,
     effective_guard_toolset,
     load_task,
     load_toolset,
@@ -47,7 +48,9 @@ RUNS_ROOT = REPO_ROOT / "kda_flow_runs"
 PROMPT_TEMPLATE = PACKAGE_DIR / "prompts" / "PROMPT.md"
 REMOTE_TEMPLATE = PACKAGE_DIR / "prompts" / "PROMPT_remote.md"
 BENCH_SERVER_URL = "http://127.0.0.1:61886"
-TOOLSET_NAME = "kda_flow"
+# The kernel package a ROCm run copies into its venv: the TIRx-kernels checkout
+# beside this one (the PyPI release has no ROCm kernels).
+ROCM_KERNELS_SOURCE = REPO_ROOT.parent / "TIRx-kernels"
 FLOWVERSE_CONFIG_NAME = "flowverse.yaml"
 
 
@@ -59,7 +62,7 @@ def _prompt(
     remote_url: str | None = None,
     python: Path | None = None,
 ) -> str:
-    blocks = shared_rule_blocks(toolset)
+    blocks = shared_rule_blocks(toolset, task.platform)
     preamble = "You are running as an autonomous kernel-optimization agent."
     environment_blocks = ["1. " + blocks["banned_reads"]]
     bench_timeout_s = task.bench_timeout_s or 120
@@ -68,7 +71,8 @@ def _prompt(
         f"timeout {bench_timeout_s}s {interpreter} "
         f"evolution/benchmark/adapter.py {task.workload_dir} CANDIDATE"
     )
-    bench_environment = "env CUDA_VISIBLE_DEVICES=<picked> \\\n"
+    visible_devices = "HIP_VISIBLE_DEVICES" if task.platform == "rocm" else "CUDA_VISIBLE_DEVICES"
+    bench_environment = f"env {visible_devices}=<picked> \\\n"
     remote_section = ""
     if remote_url is not None:
         bench_command = (
@@ -124,17 +128,31 @@ def setup(
         raise SystemExit(f"run directory already exists: {run_dir}")
 
     task = load_task(task_path(REPO_ROOT, task_name))
-    toolset = load_toolset(toolset_path(REPO_ROOT, TOOLSET_NAME))
-    effective = effective_guard_toolset(
-        toolset, task, extra_banned=outside_run_bans(REPO_ROOT, RUNS_ROOT)
-    )
+    if task.platform == "rocm" and remote_url is not None:
+        raise ValueError("remote scoring is not available for ROCm tasks yet")
+    toolset_name = PLATFORM_TOOLSETS[task.platform]
+    toolset = load_toolset(toolset_path(REPO_ROOT, toolset_name))
+    outside = [REPO_ROOT, RUNS_ROOT]
+    kernels_source = None
+    if task.platform == "rocm":
+        # The run venv holds a sanitized copy; the source checkout itself is off limits.
+        kernels_source = ROCM_KERNELS_SOURCE
+        outside.append(kernels_source)
+    effective = effective_guard_toolset(toolset, task, extra_banned=outside_run_bans(*outside))
     effective = replace(
         effective,
         banned_paths=(effective.banned_paths + kernel_reference_bans(effective.banned_paths)),
     )
     run_dir.mkdir(parents=True)
     pinned = sandbox.pinned_commit(REPO_ROOT)
-    worktree, environment, effective = sandbox.up(run_dir, REPO_ROOT, effective, pinned=pinned)
+    worktree, environment, effective = sandbox.up(
+        run_dir,
+        REPO_ROOT,
+        effective,
+        pinned=pinned,
+        platform=task.platform,
+        kernels_source=kernels_source,
+    )
     bench = worktree / BENCH_ADAPTER
     if not bench.exists():
         raise SystemExit(f"worktree has no benchmark entry: {bench}")
@@ -154,7 +172,8 @@ def setup(
         "run_id": run_id,
         "flow": "kda_flow",
         "task": task_name,
-        "toolset": TOOLSET_NAME,
+        "toolset": toolset_name,
+        "platform": task.platform,
         "workload_dir": task.workload_dir,
         "pinned_commit": pinned,
         "kernel_authoring": task.kernel_authoring,

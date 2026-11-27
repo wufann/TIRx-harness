@@ -38,6 +38,11 @@ else
     --entrypoint sleep "$IMAGE" infinity >/dev/null
 fi
 
+# aiter (benchmark baselines) writes JIT modules / tuned-config locks into the image;
+# as a normal user it would copy its ~4 GB JIT directory into $HOME instead.
+docker exec -u 0 "$CTR" bash -c 'chmod -R a+rwX /sgl-workspace/aiter/aiter/jit 2>/dev/null;
+  mkdir -p /tmp/aiter_configs && chmod -R a+rwX /tmp/aiter_configs' || true
+
 # 3. Python env inside the container (idempotent).
 docker exec "$CTR" bash "$DEVENV/setup_venv.sh"
 log "ready: dev_exec.sh <jobid> '<cmd>'   or on the node: docker exec -it $CTR bash"

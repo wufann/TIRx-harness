@@ -13,7 +13,7 @@ from . import claude, codex
 from .declare import Toolset
 from .environment import Environment
 from .guards import _warn_unmatched_bans
-from .live_references import fetch_live_references
+from .live_references import fetch_live_references, fetch_rocm_references
 from .worktree import (
     _path_is_wholly_banned,
     create_worktree,
@@ -90,7 +90,13 @@ def install_toolsets(worktree: Path, effective) -> None:
 
 
 def up(
-    run_dir: Path, repo_root: Path, effective: Toolset, *, pinned: str | None = None
+    run_dir: Path,
+    repo_root: Path,
+    effective: Toolset,
+    *,
+    pinned: str | None = None,
+    platform: str = "cuda",
+    kernels_source: Path | None = None,
 ) -> tuple[Path, Environment, Toolset]:
     """Build ``run_dir/worktree`` and install Claude and Codex tool hooks.
 
@@ -102,7 +108,7 @@ def up(
     worktree = run_dir / "worktree"
     create_worktree(worktree, repo_root, pinned or pinned_commit(repo_root))
     prefetch_submodules(worktree, effective.banned_paths, repo_root=repo_root)
-    environment = Environment.create(worktree)
+    environment = Environment.create(worktree, platform=platform, kernels_source=kernels_source)
     # Check now: the reference fetch below also removes these paths from the venv.
     _warn_unmatched_bans(environment.site_packages, environment.kernel_bans(effective.banned_paths))
     effective = replace(
@@ -117,6 +123,7 @@ def up(
     install_skills(worktree, effective)
     install_toolsets(worktree, effective)
     fetch_live_references(worktree, effective.banned_paths)
+    fetch_rocm_references(worktree)
     environment.sanitize(effective.banned_paths)
     scrub_worktree_git(worktree)
     return worktree, environment, effective

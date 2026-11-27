@@ -1,0 +1,4 @@
+interface:
+  display_name: "TIRx ROCm Wiki"
+  short_description: "gfx950 T.amdgcn dialect, MFMA layouts, LLVM AMDGPU behaviour and kernel patterns"
+  default_prompt: "Use $tirx-rocm-wiki for T.amdgcn dialect, TVMScript-on-ROCm, gfx950 instruction, MFMA layout, LLVM AMDGPU backend or gfx950 kernel-pattern questions; consult the CDNA4 ISA text for exact semantics."

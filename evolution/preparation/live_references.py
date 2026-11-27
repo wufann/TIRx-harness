@@ -58,3 +58,18 @@ def fetch_live_references(worktree: Path, banned_paths: list[str] | None = None)
         guards._warn_unmatched_bans(worktree, kernel_reference_bans(banned_paths))
         guards._sanitize_banned_paths(worktree, banned_paths)
     return [worktree / SKILL_REL / line for line in result.stdout.splitlines() if line]
+
+
+ROCM_FETCH_SCRIPT_REL = Path(".claude/skills/tirx-rocm-wiki/scripts/fetch_references.py")
+
+
+def fetch_rocm_references(worktree: Path) -> list[Path]:
+    """Run the installed ROCm wiki fetcher (CDNA4 ISA text); a no-op without that skill."""
+    script = worktree / ROCM_FETCH_SCRIPT_REL
+    if not script.is_file():
+        return []
+    result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(f"tirx-rocm-wiki reference fetch failed: {result.stderr.strip()}")
+    root = script.parents[1]
+    return [root / line for line in result.stdout.splitlines() if line]

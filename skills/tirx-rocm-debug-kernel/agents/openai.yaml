@@ -1,0 +1,4 @@
+interface:
+  display_name: "TIRx ROCm Debug Kernel"
+  short_description: "Debug and validate runnable gfx950 TIRx kernels"
+  default_prompt: "Use $tirx-rocm-debug-kernel to reproduce, localize and fix this gfx950 TIRx kernel failure with evidence from runs and the generated ISA."

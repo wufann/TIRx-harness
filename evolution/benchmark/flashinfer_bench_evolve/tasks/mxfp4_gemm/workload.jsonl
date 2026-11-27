@@ -1,0 +1,3 @@
+{"definition":"mxfp4_gemm","solution":null,"workload":{"uuid":"qwen38-shared-gate-up-m4096","axes":{"M":4096,"N":1280,"K":2560},"inputs":{"A":{"type":"random"},"SA":{"type":"random"},"B":{"type":"random"},"SB":{"type":"random"}}},"evaluation":null}
+{"definition":"mxfp4_gemm","solution":null,"workload":{"uuid":"qwen38-shared-gate-up-m8192","axes":{"M":8192,"N":1280,"K":2560},"inputs":{"A":{"type":"random"},"SA":{"type":"random"},"B":{"type":"random"},"SB":{"type":"random"}}},"evaluation":null}
+{"definition":"mxfp4_gemm","solution":null,"workload":{"uuid":"qwen38-shared-gate-up-m16384","axes":{"M":16384,"N":1280,"K":2560},"inputs":{"A":{"type":"random"},"SA":{"type":"random"},"B":{"type":"random"},"SB":{"type":"random"}}},"evaluation":null}

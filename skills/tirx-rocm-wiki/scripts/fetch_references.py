@@ -56,7 +56,7 @@ def main() -> int:
         pdf = cache / f"{ISA_NAME}.pdf"
         if not pdf.is_file():
             partial = pdf.with_suffix(".part")
-            with urllib.request.urlopen(ISA_URL, timeout=120) as response:
+            with urllib.request.urlopen(ISA_URL, timeout=60) as response:
                 partial.write_bytes(response.read())
             partial.rename(pdf)
         partial = cached_text.with_suffix(".part")

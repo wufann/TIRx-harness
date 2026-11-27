@@ -64,12 +64,18 @@ ROCM_FETCH_SCRIPT_REL = Path(".claude/skills/tirx-rocm-wiki/scripts/fetch_refere
 
 
 def fetch_rocm_references(worktree: Path) -> list[Path]:
-    """Run the installed ROCm wiki fetcher (CDNA4 ISA text); a no-op without that skill."""
+    """Run the installed ROCm wiki fetcher (CDNA4 ISA text); a no-op without that skill.
+
+    The ISA text is supplementary, so a failed download only warns: the skill tells the
+    agent how to fetch it later.
+    """
     script = worktree / ROCM_FETCH_SCRIPT_REL
     if not script.is_file():
         return []
     result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True)
     if result.returncode:
-        raise RuntimeError(f"tirx-rocm-wiki reference fetch failed: {result.stderr.strip()}")
+        detail = (result.stderr.strip().splitlines() or ["no output"])[-1]
+        print(f"warning: tirx-rocm-wiki reference fetch failed: {detail}", file=sys.stderr)
+        return []
     root = script.parents[1]
     return [root / line for line in result.stdout.splitlines() if line]

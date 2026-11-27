@@ -89,3 +89,53 @@ def test_mxfp4_reference_matches_float_matmul():
     out = baseline.reference(a, sa, b, sb)
     assert out.dtype == torch.bfloat16
     torch.testing.assert_close(out.float(), expected, rtol=1e-2, atol=1e-2)
+
+
+@pytest.mark.parametrize(
+    "mode, ok", [("honest", True), ("precompute", False), ("weights_copied", True)]
+)
+def test_mxfp4_input_dependence_covers_integer_activations(mode, ok, monkeypatch):
+    """uint8 activations are invisible to the float perturbation; the task's hook covers them."""
+    from flashinfer_bench_evolve.benchmark_common import (
+        KernelRun,
+        clone_args,
+        input_dependence_check,
+    )
+
+    monkeypatch.setattr(torch.cuda, "synchronize", lambda *args, **kwargs: None)
+    bench = adapter.import_benchmark("mxfp4_gemm")
+    gen = torch.Generator().manual_seed(0)
+    a = torch.randint(0, 256, (32, 64), dtype=torch.uint8, generator=gen)
+    b = torch.randint(0, 256, (16, 64), dtype=torch.uint8, generator=gen)
+    sa = torch.randint(124, 131, (32, 4), dtype=torch.uint8, generator=gen)
+    sb = torch.randint(124, 131, (16, 4), dtype=torch.uint8, generator=gen)
+    bound = clone_args((a, sa, b, sb))
+
+    def setup(a, sa, b, sb):
+        if mode == "weights_copied":  # repacking weights in setup is allowed
+            b, sb = b.clone(), sb.clone()
+        d, stored = torch.empty(32, 16, dtype=torch.bfloat16), baseline.reference(a, sa, b, sb)
+
+        def run():
+            d.copy_(stored if mode == "precompute" else baseline.reference(a, sa, b, sb))
+
+        return run, {"A": a, "SA": sa, "B": b, "SB": sb, "D": d}
+
+    candidate = KernelRun(lambda run, data: (run(), data["D"])[1], tuple(setup(*bound)))
+    candidate.run()
+    kwargs = dict(
+        candidate_runner=candidate,
+        bound_args=bound,
+        correctness_fn=baseline.reference,
+        correctness_prepare=None,
+        device=torch.device("cpu"),
+        atol=bench.ATOL,
+        rtol=bench.RTOL,
+        required_matched_ratio=bench.REQUIRED_MATCHED_RATIO,
+        required_rms_error_ratios=None,
+        phase="input-dependence trial 1",
+        seed=1,
+    )
+    assert input_dependence_check(**kwargs) is None  # the float-only default sees nothing
+    result = input_dependence_check(**kwargs, perturb_fn=bench.perturb_activations)
+    assert result is not None and result.ok == ok

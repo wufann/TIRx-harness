@@ -877,29 +877,39 @@ def input_dependence_check(
     phase: str,
     seed: int,
     compare_fn=None,
+    perturb_fn=None,
 ):
     """Change a prepared candidate's inputs in place and check one more call on the new values.
 
     A result computed before the call (in setup, or cached on an earlier call) no longer matches.
-    Only finite floating-point inputs with more than one element are changed. Returns None when
-    none can be changed or one does not reach the candidate (the prepare step copied it).
+    Only finite floating-point inputs with more than one element are changed, unless the task
+    supplies ``perturb_fn(bound_args) -> tensors``: the inputs it would change (for example
+    quantized activations stored as integers), and ``perturb_fn(bound_args, seed)`` changes them
+    in place. Returns None when none can be changed or one does not reach the candidate (the
+    prepare step copied it).
     """
 
     if correctness_fn is None:
         return None
-    inputs = [
-        tensor
-        for tensor in _tensors(bound_args)
-        if tensor.is_floating_point()
-        and tensor.numel() > 1
-        # FP8 does not implement isfinite on every supported device.
-        and bool(torch.isfinite(tensor.float() if tensor.element_size() == 1 else tensor).all())
-    ]
+    if perturb_fn is not None:
+        inputs = list(perturb_fn(bound_args))
+    else:
+        inputs = [
+            tensor
+            for tensor in _tensors(bound_args)
+            if tensor.is_floating_point()
+            and tensor.numel() > 1
+            # FP8 does not implement isfinite on every supported device.
+            and bool(torch.isfinite(tensor.float() if tensor.element_size() == 1 else tensor).all())
+        ]
     bound = {tensor.untyped_storage().data_ptr() for tensor in _tensors(candidate_runner.args)}
     if not inputs or any(t.untyped_storage().data_ptr() not in bound for t in inputs):
         return None
 
-    perturb_inputs_(inputs, seed)
+    if perturb_fn is not None:
+        perturb_fn(bound_args, seed)
+    else:
+        perturb_inputs_(inputs, seed)
     reference = reference_outputs(
         correctness_fn, prepare_args(bound_args, correctness_prepare), device
     )
@@ -999,6 +1009,7 @@ def run_benchmark(
     check_after_timing: bool | None = None,
     require_repeatable_outputs: bool | None = None,
     check_input_dependence: bool | None = None,
+    perturb_fn=None,
 ):
     if correctness_runs is None:
         correctness_runs = DEFAULT_CORRECTNESS_RUNS
@@ -1215,10 +1226,13 @@ def run_benchmark(
                     phase=f"input-dependence trial {trial_idx}",
                     seed=trial_idx,
                     compare_fn=compare_fn,
+                    perturb_fn=perturb_fn,
                 )
                 if dependence is None:
                     if trial_idx == 1 and correctness_fn is not None:
-                        print("  input-dependence: skipped (a float input is not bound in place)")
+                        print(
+                            "  input-dependence: skipped (no perturbable input is bound in place)"
+                        )
                 else:
                     max_abs = max(max_abs, dependence.max_abs)
                     max_rel = max(max_rel, dependence.max_rel)

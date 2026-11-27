@@ -72,6 +72,30 @@ def make_inputs(entry, device):
     return [codes(m), scales(m), codes(n), scales(n)]
 
 
+def perturb_activations(bound_args, seed=None):
+    """The input-dependence gate: the activations A / SA (weights may be repacked in setup).
+
+    Called with ``seed`` it overwrites them in place with fresh codes and in-range scales;
+    without, it names the tensors it would change.
+    """
+
+    a, sa = bound_args[0], bound_args[1]
+    if seed is not None:
+        gen = torch.Generator(device=a.device).manual_seed(1000 + seed)
+        a.copy_(torch.randint(0, 256, a.shape, dtype=torch.uint8, device=a.device, generator=gen))
+        sa.copy_(
+            torch.randint(
+                SCALE_MIN,
+                SCALE_MAX + 1,
+                sa.shape,
+                dtype=torch.uint8,
+                device=sa.device,
+                generator=gen,
+            )
+        )
+    return [a, sa]
+
+
 def tirx_prepare(solution_module, a, sa, b, sb):
     """Compile and bind a candidate outside timing."""
 
@@ -148,6 +172,7 @@ def run_suite(
         correctness_runs=cfg.correctness_runs,
         check_after_timing=cfg.check_after_timing,
         require_repeatable_outputs=cfg.require_repeatable_outputs,
+        perturb_fn=perturb_activations,
     )
     _print_aggregate(rows)
     return rows

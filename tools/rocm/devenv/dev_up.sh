@@ -50,6 +50,12 @@ else
     --entrypoint sleep "$IMAGE" infinity >/dev/null
 fi
 
+# The image has no passwd entry for the host uid ("I have no name!"); tools that look the
+# user up (getpwuid, Node's os.userInfo) need one. Container layer only.
+docker exec -u 0 "$CTR" bash -c "getent passwd $(id -u) >/dev/null ||
+  echo '$(id -un):x:$(id -u):$(id -g)::$CW/.home:/bin/bash' >> /etc/passwd;
+  getent group $(id -g) >/dev/null || echo '$(id -gn):x:$(id -g):' >> /etc/group"
+
 # aiter (benchmark baselines) writes JIT modules / tuned-config locks into the image;
 # as a normal user it would copy its ~4 GB JIT directory into $HOME instead.
 docker exec -u 0 "$CTR" bash -c 'chmod -R a+rwX /sgl-workspace/aiter/aiter/jit 2>/dev/null;

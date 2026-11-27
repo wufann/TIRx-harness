@@ -46,7 +46,7 @@ D=$CW/TIRx-harness/tools/rocm/devenv
 $D/pull.sh                                   # after pushing from the workstation
 $D/dev_up.sh <jobid>                         # ~1 s if the image is cached on the node
 $D/run_bg.sh <jobid> build build_tvm_tirx.sh # only when tvm-tirx C++ changed
-$D/dev_exec.sh <jobid> 'cd TIRx-kernels && HIP_VISIBLE_DEVICES=7 pytest -p no:xdist tests/rocm'
+$D/dev_exec.sh <jobid> 'cd TIRx-kernels && HIP_VISIBLE_DEVICES=7 python -m pytest -o addopts="" tests/rocm'
 ```
 
 ## analysis/

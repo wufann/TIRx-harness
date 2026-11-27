@@ -26,7 +26,7 @@ $CW/                    e.g. /home/<user>/compiler_work
 | --- | --- | --- |
 | `env.sh` | sourced | paths, container name, image (pinned by digest), host profiles |
 | `pull.sh [branch]` | host | `git pull --ff-only` the three checkouts; code reaches the cluster only through git |
-| `dev_up.sh <jobid\|->` | host | pull image if missing, create/restart the container, `setup_venv.sh` |
+| `dev_up.sh <jobid\|->` | host | pull image if missing, create/restart the container (`DEV_RECREATE=1`: recreate), `setup_venv.sh` |
 | `dev_exec.sh <jobid\|-> '<cmd>'` | host | run a command in the container with the venv active (`DEV_ROOT=1`: as root) |
 | `run_bg.sh <jobid\|-> <name> <script> [args]` | host | detached run, log in `$CW/logs/<name>_<ts>.log` |
 | `status.sh [jobid]` | host | repos, venv, build, latest logs, jobs, container |
@@ -34,6 +34,7 @@ $CW/                    e.g. /home/<user>/compiler_work
 | `build_tvm_tirx.sh` | container | editable tvm-tirx build with LLVM (AMDGPU) + ROCm, then `smoke_tvm_tirx.py` |
 | `test_tvm_tirx.sh [pytest args]` | container | ROCm-relevant tvm-tirx tests (`HIP_VISIBLE_DEVICES`, default 7) |
 | `inspect_image.sh` | image | read-only toolchain inspection of a candidate image |
+| `claude.sh [args]` | container | Claude Code from the host account's installation and login (host home mounted by `dev_up.sh`) |
 
 On the crs login node the first argument is the job id and the host-side scripts re-run
 themselves on the job's compute node via `spur exec`; on a compute node or a machine without a
@@ -65,3 +66,17 @@ $D/dev_exec.sh <jobid> 'cd TIRx-kernels && HIP_VISIBLE_DEVICES=7 python -m pytes
 rocprofv3 hangs on any Python process that uses HIP in the sglang ROCm 10 images (it cannot be
 stopped with SIGTERM; use `timeout -s KILL`), hence the C++ workloads and the torch-free `run`
 mode of `prof_gemm.py`.
+
+## Optimization runs (evolution)
+
+Prepare a ROCm run inside the container, then start the agent in it:
+
+```bash
+$D/dev_exec.sh <jobid> 'cd TIRx-harness && python -m evolution.cli init --task mxfp4_gemm_qwen38_shared_gate_up_m8192 --name <run>'
+# interactive shell on the node (srun --jobid <jobid> --overlap --pty bash), then:
+docker exec -it <user>-tirx-dev bash
+cd $CW/TIRx-harness/kda_flow_runs/<run>/worktree && . .venv/bin/activate
+$CW/TIRx-harness/tools/rocm/devenv/claude.sh
+# in Claude Code: /goal Read ../PROMPT.md and beat the baseline while passing correctness.
+```
+

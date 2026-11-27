@@ -50,5 +50,6 @@ reexec_on_node() {
   local job=$1; shift || true
   if [ -z "$job" ]; then echo "usage: $(basename "$self") <jobid> ..." >&2; exit 2; fi
   # forward the knobs the node-side scripts read (spur exec does not pass the environment)
-  exec spur exec "$job" env DEV_ROOT="${DEV_ROOT:-0}" CW="$CW" bash "$self" "$job" "$@"
+  exec spur exec "$job" env DEV_ROOT="${DEV_ROOT:-0}" DEV_RECREATE="${DEV_RECREATE:-0}" CW="$CW" \
+    bash "$self" "$job" "$@"
 }

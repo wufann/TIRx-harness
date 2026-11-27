@@ -16,7 +16,19 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
 fi
 log "image ok: $(docker image inspect "$IMAGE" --format '{{.Id}}' | cut -c1-19)"
 
-# 2. Container: reuse if running, restart if stopped, else create.
+# 2. Container: reuse if running, restart if stopped, else create (DEV_RECREATE=1: remove
+#    and create again, e.g. after changing the mounts below).
+# The host home is mounted (same path) when it holds a Claude Code installation, so
+# claude.sh can run the account's own installation and login inside the container.
+HOST_HOME=${HOST_HOME:-$HOME}
+home_mount=()
+if [ -x "$HOST_HOME/.local/bin/claude" ]; then
+  home_mount=(-v "$HOST_HOME:$HOST_HOME" -e HOST_HOME="$HOST_HOME")
+fi
+if [ "${DEV_RECREATE:-0}" = 1 ]; then
+  log "DEV_RECREATE=1: removing $CTR"
+  docker rm -f "$CTR" >/dev/null 2>&1 || true
+fi
 state=$(docker inspect -f '{{.State.Status}}' "$CTR" 2>/dev/null || true)
 if [ "$state" = running ]; then
   log "container $CTR already running"
@@ -34,7 +46,7 @@ else
     --cap-add SYS_PTRACE --security-opt seccomp=unconfined \
     -u "$(id -u):$(id -g)" \
     -e HOME="$CW/.home" -e USER="$(id -un)" \
-    -v "$CW:$CW" -w "$CW" \
+    "${home_mount[@]}" -v "$CW:$CW" -w "$CW" \
     --entrypoint sleep "$IMAGE" infinity >/dev/null
 fi
 
@@ -45,4 +57,7 @@ docker exec -u 0 "$CTR" bash -c 'chmod -R a+rwX /sgl-workspace/aiter/aiter/jit 2
 
 # 3. Python env inside the container (idempotent).
 docker exec "$CTR" bash "$DEVENV/setup_venv.sh"
+if [ ${#home_mount[@]} -gt 0 ] && ! docker exec "$CTR" test -d "$HOST_HOME/.local/share/claude"; then
+  log "note: $HOST_HOME is not mounted in $CTR; rerun with DEV_RECREATE=1 to use claude.sh"
+fi
 log "ready: dev_exec.sh <jobid> '<cmd>'   or on the node: docker exec -it $CTR bash"

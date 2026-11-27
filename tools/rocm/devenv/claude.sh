@@ -15,4 +15,8 @@ if [ -f "$env_file" ]; then
   eval "$(grep -E '^[[:space:]]*export[[:space:]]+(AMD_LLM_GATEWAY_KEY|ANTHROPIC_[A-Z_]+|CLAUDE_CODE_[A-Z_]+)(=|[[:space:]]*$)' "$env_file")"
 fi
 [ -n "$CLAUDE_CODE_TMPDIR" ] && mkdir -p "$CLAUDE_CODE_TMPDIR"
+# Optimization runs use the strongest model by default (the host ~/.bashrc may pin an
+# older one for interactive work); TIRX_CLAUDE_MODEL overrides it.
+model=${TIRX_CLAUDE_MODEL:-claude-opus-5.5}
+export ANTHROPIC_MODEL=$model ANTHROPIC_DEFAULT_OPUS_MODEL=$model CLAUDE_CODE_SUBAGENT_MODEL=$model
 exec "$HOST_HOME/.local/bin/claude" "$@"

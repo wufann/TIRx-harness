@@ -1,0 +1,10 @@
+# Extra packages for the tvm-tirx venv (on top of the image's /opt/venv).
+# Changing this file makes setup_venv.sh reinstall.
+apache-tvm-ffi==0.1.16
+apache-tvm-ffi-orcjit>=0.1.3
+# Build backend for `pip install --no-build-isolation -e tvm-tirx` (keeps the
+# image's cmake/ninja instead of downloading new ones per build).
+scikit-build-core>=0.11,!=1.1.0
+setuptools-scm
+pytest
+uv
